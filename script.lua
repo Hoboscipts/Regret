@@ -56,17 +56,19 @@ local Config = {
     TPOffset = 3.5,
     TriggerDistance = 40,
     Cooldown = 0.12,
-    TeamCheck = true,
+    TeamCheck = true, -- always on, not exposed in GUI
     AutoShoot = false,
     AutoShootCPS = 10,
     LookAtTarget = true,
     LookAtHead = true,
     ToggleKey = Enum.KeyCode.RightShift,
+    RageKey = Enum.KeyCode.T,
 }
 
 local lastTP = 0
 local lastShot = 0
 local rebinding = false
+local rebindingRage = false
 
 -- ========== UTILITY ==========
 local function getChar(p) return p and p.Character end
@@ -78,7 +80,6 @@ local function isAlive(p)
 end
 
 local function sameTeam(p)
-    if not Config.TeamCheck then return false end
     return p.Team ~= nil and p.Team == LocalPlayer.Team
 end
 
@@ -121,17 +122,10 @@ local function tryShoot()
     local interval = 1 / Config.AutoShootCPS
     if now - lastShot < interval then return end
     lastShot = now
-    -- Fire equipped tool
     local char = getChar(LocalPlayer)
     if not char then return end
-    local tool = char:FindFirstChildOfClass("Tool")
-    if tool then
-        local remote = tool:FindFirstChild("RemoteEvent") or tool:FindFirstChild("RemoteFunction")
-        -- generic mouse click fire
-        local mouse = LocalPlayer:GetMouse()
-        mouse1press()
-        task.delay(0.05, mouse1release)
-    end
+    mouse1press()
+    task.delay(0.05, mouse1release)
 end
 
 -- ========== CORE LOOP ==========
@@ -156,8 +150,7 @@ RunService.Heartbeat:Connect(function()
     lastTP = now
 end)
 
--- ========== GUI ==========
--- Destroy old
+-- ========== GUI SETUP ==========
 if LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("UE_RageBot") then
     LocalPlayer.PlayerGui.UE_RageBot:Destroy()
 end
@@ -166,9 +159,10 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "UE_RageBot"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.IgnoreGuiInset = true
 ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Palette (Unnamed Enhancements inspired)
+-- Palette
 local C = {
     BG       = Color3.fromRGB(12, 12, 18),
     Panel    = Color3.fromRGB(18, 18, 26),
@@ -182,15 +176,44 @@ local C = {
     Red      = Color3.fromRGB(200, 30, 60),
 }
 
--- Main Window
+-- ========== DELTA-STYLE OPEN BADGE ==========
+local Badge = Instance.new("TextButton")
+Badge.Name = "OpenBadge"
+Badge.Size = UDim2.new(0, 42, 0, 42)
+Badge.Position = UDim2.new(0, 16, 0.5, -21)
+Badge.BackgroundColor3 = C.Panel
+Badge.Text = "R"
+Badge.TextColor3 = C.AccentHi
+Badge.Font = Enum.Font.GothamBlack
+Badge.TextSize = 20
+Badge.BorderSizePixel = 0
+Badge.Visible = false
+Badge.ZIndex = 20
+Badge.Parent = ScreenGui
+
+local badgeCorner = Instance.new("UICorner", Badge)
+badgeCorner.CornerRadius = UDim.new(0, 8)
+
+local badgeStroke = Instance.new("UIStroke", Badge)
+badgeStroke.Color = C.Border
+badgeStroke.Thickness = 1.5
+
+-- pulse glow on badge
+local badgeGlow = Instance.new("UIStroke", Badge)
+badgeGlow.Color = C.AccentHi
+badgeGlow.Thickness = 0
+TweenService:Create(badgeGlow, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Thickness = 2.5}):Play()
+
+-- ========== MAIN WINDOW ==========
 local Main = Instance.new("Frame")
 Main.Name = "Main"
-Main.Size = UDim2.new(0, 300, 0, 490)
-Main.Position = UDim2.new(0, 24, 0.5, -245)
+Main.Size = UDim2.new(0, 310, 0, 510)
+Main.Position = UDim2.new(0, 24, 0.5, -255)
 Main.BackgroundColor3 = C.BG
 Main.BorderSizePixel = 0
 Main.Active = true
 Main.Draggable = true
+Main.ClipsDescendants = true
 Main.Parent = ScreenGui
 
 local mainCorner = Instance.new("UICorner", Main)
@@ -200,7 +223,38 @@ local mainStroke = Instance.new("UIStroke", Main)
 mainStroke.Color = C.Border
 mainStroke.Thickness = 1.2
 
--- Header
+-- touch drag support for mobile
+local dragging = false
+local dragStart = nil
+local startPos = nil
+
+Main.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = Main.Position
+    end
+end)
+
+Main.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.Touch then
+        local delta = input.Position - dragStart
+        Main.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- ========== HEADER ==========
 local Header = Instance.new("Frame")
 Header.Size = UDim2.new(1, 0, 0, 42)
 Header.BackgroundColor3 = C.Panel
@@ -208,7 +262,6 @@ Header.BorderSizePixel = 0
 Header.Parent = Main
 Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 10)
 
--- patch bottom of header corners
 local HeaderPatch = Instance.new("Frame")
 HeaderPatch.Size = UDim2.new(1, 0, 0, 10)
 HeaderPatch.Position = UDim2.new(0, 0, 1, -10)
@@ -228,7 +281,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -90, 1, 0)
 Title.Position = UDim2.new(0, 30, 0, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "Regret Hub"
+Title.Text = "Regret v1.0"
 Title.TextColor3 = C.Text
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
@@ -246,21 +299,37 @@ Sub.TextSize = 11
 Sub.TextXAlignment = Enum.TextXAlignment.Right
 Sub.Parent = Header
 
--- Close
 local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0, 24, 0, 24)
-CloseBtn.Position = UDim2.new(1, -30, 0.5, -12)
+CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+CloseBtn.Position = UDim2.new(1, -36, 0.5, -15)
 CloseBtn.BackgroundColor3 = C.Red
 CloseBtn.Text = "✕"
 CloseBtn.TextColor3 = Color3.fromRGB(255,255,255)
 CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 12
+CloseBtn.TextSize = 14
 CloseBtn.BorderSizePixel = 0
 CloseBtn.Parent = Header
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 5)
-CloseBtn.MouseButton1Click:Connect(function() Main.Visible = false end)
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 
--- Scroll Content
+CloseBtn.MouseButton1Click:Connect(function()
+    Main.Visible = false
+    Badge.Visible = true
+end)
+CloseBtn.TouchTap:Connect(function()
+    Main.Visible = false
+    Badge.Visible = true
+end)
+
+Badge.MouseButton1Click:Connect(function()
+    Badge.Visible = false
+    Main.Visible = true
+end)
+Badge.TouchTap:Connect(function()
+    Badge.Visible = false
+    Main.Visible = true
+end)
+
+-- ========== SCROLL CONTENT ==========
 local Scroll = Instance.new("ScrollingFrame")
 Scroll.Size = UDim2.new(1, 0, 1, -42)
 Scroll.Position = UDim2.new(0, 0, 0, 42)
@@ -270,6 +339,7 @@ Scroll.ScrollBarThickness = 3
 Scroll.ScrollBarImageColor3 = C.Accent
 Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 Scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+Scroll.ScrollingEnabled = true
 Scroll.Parent = Main
 
 local Layout = Instance.new("UIListLayout", Scroll)
@@ -283,7 +353,6 @@ Padding.PaddingTop = UDim.new(0, 10)
 Padding.PaddingBottom = UDim.new(0, 10)
 
 -- ========== COMPONENT BUILDERS ==========
-
 local order = 0
 local function nextOrder() order += 1 return order end
 
@@ -315,7 +384,7 @@ end
 
 local function makeToggle(labelText, default, callback)
     local Row = Instance.new("Frame")
-    Row.Size = UDim2.new(1, 0, 0, 34)
+    Row.Size = UDim2.new(1, 0, 0, 40)
     Row.BackgroundColor3 = C.Panel
     Row.BorderSizePixel = 0
     Row.LayoutOrder = nextOrder()
@@ -323,19 +392,19 @@ local function makeToggle(labelText, default, callback)
     Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 7)
 
     local Lbl = Instance.new("TextLabel")
-    Lbl.Size = UDim2.new(0.7, 0, 1, 0)
+    Lbl.Size = UDim2.new(0.65, 0, 1, 0)
     Lbl.Position = UDim2.new(0, 12, 0, 0)
     Lbl.BackgroundTransparency = 1
     Lbl.Text = labelText
     Lbl.TextColor3 = C.Text
     Lbl.Font = Enum.Font.Gotham
-    Lbl.TextSize = 12
+    Lbl.TextSize = 13
     Lbl.TextXAlignment = Enum.TextXAlignment.Left
     Lbl.Parent = Row
 
     local Pill = Instance.new("TextButton")
-    Pill.Size = UDim2.new(0, 44, 0, 22)
-    Pill.Position = UDim2.new(1, -54, 0.5, -11)
+    Pill.Size = UDim2.new(0, 50, 0, 26)
+    Pill.Position = UDim2.new(1, -60, 0.5, -13)
     Pill.BackgroundColor3 = default and C.On or C.Off
     Pill.Text = ""
     Pill.BorderSizePixel = 0
@@ -343,29 +412,40 @@ local function makeToggle(labelText, default, callback)
     Instance.new("UICorner", Pill).CornerRadius = UDim.new(1, 0)
 
     local Knob = Instance.new("Frame")
-    Knob.Size = UDim2.new(0, 16, 0, 16)
-    Knob.Position = default and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+    Knob.Size = UDim2.new(0, 20, 0, 20)
+    Knob.Position = default and UDim2.new(1, -23, 0.5, -10) or UDim2.new(0, 3, 0.5, -10)
     Knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
     Knob.BorderSizePixel = 0
     Knob.Parent = Pill
     Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
 
     local state = default
-    Pill.MouseButton1Click:Connect(function()
+
+    local function toggle()
         state = not state
         local goal = state and C.On or C.Off
-        local kGoal = state and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+        local kGoal = state and UDim2.new(1, -23, 0.5, -10) or UDim2.new(0, 3, 0.5, -10)
         TweenService:Create(Pill, TweenInfo.new(0.15), {BackgroundColor3 = goal}):Play()
         TweenService:Create(Knob, TweenInfo.new(0.15), {Position = kGoal}):Play()
         callback(state)
-    end)
+    end
 
-    return Row
+    Pill.MouseButton1Click:Connect(toggle)
+    Pill.TouchTap:Connect(toggle)
+
+    return Row, function(v)
+        state = v
+        local goal = state and C.On or C.Off
+        local kGoal = state and UDim2.new(1, -23, 0.5, -10) or UDim2.new(0, 3, 0.5, -10)
+        TweenService:Create(Pill, TweenInfo.new(0.15), {BackgroundColor3 = goal}):Play()
+        TweenService:Create(Knob, TweenInfo.new(0.15), {Position = kGoal}):Play()
+    end
 end
 
+-- Mobile-friendly slider using both mouse and touch
 local function makeSlider(labelText, min, max, default, suffix, callback)
     local Row = Instance.new("Frame")
-    Row.Size = UDim2.new(1, 0, 0, 52)
+    Row.Size = UDim2.new(1, 0, 0, 60)
     Row.BackgroundColor3 = C.Panel
     Row.BorderSizePixel = 0
     Row.LayoutOrder = nextOrder()
@@ -373,33 +453,42 @@ local function makeSlider(labelText, min, max, default, suffix, callback)
     Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 7)
 
     local Lbl = Instance.new("TextLabel")
-    Lbl.Size = UDim2.new(0.7, 0, 0, 20)
+    Lbl.Size = UDim2.new(0.65, 0, 0, 22)
     Lbl.Position = UDim2.new(0, 12, 0, 6)
     Lbl.BackgroundTransparency = 1
     Lbl.Text = labelText
     Lbl.TextColor3 = C.Text
     Lbl.Font = Enum.Font.Gotham
-    Lbl.TextSize = 12
+    Lbl.TextSize = 13
     Lbl.TextXAlignment = Enum.TextXAlignment.Left
     Lbl.Parent = Row
 
     local Val = Instance.new("TextLabel")
-    Val.Size = UDim2.new(0.3, -12, 0, 20)
-    Val.Position = UDim2.new(0.7, 0, 0, 6)
+    Val.Size = UDim2.new(0.35, -12, 0, 22)
+    Val.Position = UDim2.new(0.65, 0, 0, 6)
     Val.BackgroundTransparency = 1
     Val.Text = tostring(default) .. (suffix or "")
     Val.TextColor3 = C.AccentHi
     Val.Font = Enum.Font.GothamBold
-    Val.TextSize = 12
+    Val.TextSize = 13
     Val.TextXAlignment = Enum.TextXAlignment.Right
     Val.Parent = Row
 
+    -- Larger touch track area
+    local TrackHitbox = Instance.new("TextButton")
+    TrackHitbox.Size = UDim2.new(1, -24, 0, 28)
+    TrackHitbox.Position = UDim2.new(0, 12, 0, 30)
+    TrackHitbox.BackgroundTransparency = 1
+    TrackHitbox.Text = ""
+    TrackHitbox.BorderSizePixel = 0
+    TrackHitbox.Parent = Row
+
     local Track = Instance.new("Frame")
-    Track.Size = UDim2.new(1, -24, 0, 6)
-    Track.Position = UDim2.new(0, 12, 0, 34)
+    Track.Size = UDim2.new(1, 0, 0, 8)
+    Track.Position = UDim2.new(0, 0, 0.5, -4)
     Track.BackgroundColor3 = C.Off
     Track.BorderSizePixel = 0
-    Track.Parent = Row
+    Track.Parent = TrackHitbox
     Instance.new("UICorner", Track).CornerRadius = UDim.new(1, 0)
 
     local Fill = Instance.new("Frame")
@@ -411,7 +500,7 @@ local function makeSlider(labelText, min, max, default, suffix, callback)
     Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
 
     local Knob = Instance.new("Frame")
-    Knob.Size = UDim2.new(0, 14, 0, 14)
+    Knob.Size = UDim2.new(0, 20, 0, 20)
     Knob.AnchorPoint = Vector2.new(0.5, 0.5)
     Knob.Position = UDim2.new(initPct, 0, 0.5, 0)
     Knob.BackgroundColor3 = C.AccentHi
@@ -420,30 +509,54 @@ local function makeSlider(labelText, min, max, default, suffix, callback)
     Knob.Parent = Track
     Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
 
-    local dragging = false
-    Track.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true end
-    end)
-    UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
-    end)
-    RunService.RenderStepped:Connect(function()
-        if not dragging then return end
-        local mouse = UserInputService:GetMouseLocation()
+    local sliderActive = false
+
+    local function updateFromX(x)
         local abs = Track.AbsolutePosition
         local sz = Track.AbsoluteSize
-        local rel = math.clamp((mouse.X - abs.X) / sz.X, 0, 1)
+        local rel = math.clamp((x - abs.X) / sz.X, 0, 1)
         local val = math.floor(min + rel * (max - min))
         Fill.Size = UDim2.new(rel, 0, 1, 0)
         Knob.Position = UDim2.new(rel, 0, 0.5, 0)
         Val.Text = tostring(val) .. (suffix or "")
         callback(val)
+    end
+
+    -- Mouse support
+    TrackHitbox.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then
+            sliderActive = true
+            updateFromX(i.Position.X)
+        end
+    end)
+
+    -- Touch support
+    TrackHitbox.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.Touch then
+            sliderActive = true
+            updateFromX(i.Position.X)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1
+        or i.UserInputType == Enum.UserInputType.Touch then
+            sliderActive = false
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(i)
+        if not sliderActive then return end
+        if i.UserInputType == Enum.UserInputType.MouseMovement
+        or i.UserInputType == Enum.UserInputType.Touch then
+            updateFromX(i.Position.X)
+        end
     end)
 end
 
-local function makeKeybind(labelText, currentKey, callback)
+local function makeKeybind(labelText, currentKey, isRage, callback)
     local Row = Instance.new("Frame")
-    Row.Size = UDim2.new(1, 0, 0, 34)
+    Row.Size = UDim2.new(1, 0, 0, 40)
     Row.BackgroundColor3 = C.Panel
     Row.BorderSizePixel = 0
     Row.LayoutOrder = nextOrder()
@@ -451,31 +564,31 @@ local function makeKeybind(labelText, currentKey, callback)
     Instance.new("UICorner", Row).CornerRadius = UDim.new(0, 7)
 
     local Lbl = Instance.new("TextLabel")
-    Lbl.Size = UDim2.new(0.58, 0, 1, 0)
+    Lbl.Size = UDim2.new(0.52, 0, 1, 0)
     Lbl.Position = UDim2.new(0, 12, 0, 0)
     Lbl.BackgroundTransparency = 1
     Lbl.Text = labelText
     Lbl.TextColor3 = C.Text
     Lbl.Font = Enum.Font.Gotham
-    Lbl.TextSize = 12
+    Lbl.TextSize = 13
     Lbl.TextXAlignment = Enum.TextXAlignment.Left
     Lbl.Parent = Row
 
     local KeyBtn = Instance.new("TextButton")
-    KeyBtn.Size = UDim2.new(0, 110, 0, 22)
-    KeyBtn.Position = UDim2.new(1, -118, 0.5, -11)
+    KeyBtn.Size = UDim2.new(0, 118, 0, 26)
+    KeyBtn.Position = UDim2.new(1, -126, 0.5, -13)
     KeyBtn.BackgroundColor3 = C.Off
     KeyBtn.Text = currentKey.Name
     KeyBtn.TextColor3 = C.AccentHi
     KeyBtn.Font = Enum.Font.GothamBold
-    KeyBtn.TextSize = 11
+    KeyBtn.TextSize = 12
     KeyBtn.BorderSizePixel = 0
     KeyBtn.Parent = Row
     Instance.new("UICorner", KeyBtn).CornerRadius = UDim.new(0, 5)
 
-    KeyBtn.MouseButton1Click:Connect(function()
-        if rebinding then return end
-        rebinding = true
+    local function startRebind()
+        if rebinding or rebindingRage then return end
+        if isRage then rebindingRage = true else rebinding = true end
         KeyBtn.Text = "[ Press Key ]"
         KeyBtn.TextColor3 = Color3.fromRGB(255, 220, 60)
 
@@ -483,19 +596,26 @@ local function makeKeybind(labelText, currentKey, callback)
         conn = UserInputService.InputBegan:Connect(function(input, gpe)
             if gpe then return end
             if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-            rebinding = false
+            if isRage then rebindingRage = false else rebinding = false end
             conn:Disconnect()
-            Config.ToggleKey = input.KeyCode
+            if isRage then
+                Config.RageKey = input.KeyCode
+            else
+                Config.ToggleKey = input.KeyCode
+            end
             KeyBtn.Text = input.KeyCode.Name
             KeyBtn.TextColor3 = C.AccentHi
             callback(input.KeyCode)
         end)
-    end)
+    end
+
+    KeyBtn.MouseButton1Click:Connect(startRebind)
+    KeyBtn.TouchTap:Connect(startRebind)
 end
 
 local function makeStatus()
     local Row = Instance.new("Frame")
-    Row.Size = UDim2.new(1, 0, 0, 30)
+    Row.Size = UDim2.new(1, 0, 0, 36)
     Row.BackgroundColor3 = C.Panel
     Row.BorderSizePixel = 0
     Row.LayoutOrder = nextOrder()
@@ -517,7 +637,7 @@ local function makeStatus()
     Lbl.Text = "Idle"
     Lbl.TextColor3 = C.SubText
     Lbl.Font = Enum.Font.Gotham
-    Lbl.TextSize = 12
+    Lbl.TextSize = 13
     Lbl.TextXAlignment = Enum.TextXAlignment.Left
     Lbl.Parent = Row
 
@@ -544,8 +664,8 @@ end
 -- ========== BUILD UI ==========
 
 makeSection("RAGEBOT")
-makeToggle("Rage", false, function(v) Config.Enabled = v end)
-makeToggle("Team Check", true, function(v) Config.TeamCheck = v end)
+local _, setRageToggle = makeToggle("Rage", false, function(v) Config.Enabled = v end)
+makeKeybind("Rage Key  [default: T]", Config.RageKey, true, function(k) Config.RageKey = k end)
 
 makeSection("TELEPORT")
 makeSlider("Behind Offset", 1, 10, 3, " st", function(v) Config.TPOffset = v end)
@@ -554,18 +674,29 @@ makeSlider("Cooldown", 50, 500, 120, " ms", function(v) Config.Cooldown = v / 10
 
 makeSection("AIM")
 makeToggle("Lock Cam to Target", true, function(v) Config.LookAtTarget = v end)
-makeToggle("Aim at Head (off = body)", true, function(v) Config.LookAtHead = v end)
+makeToggle("Aim at Head", true, function(v) Config.LookAtHead = v end)
 
-makeSection("KEYBIND")
-makeKeybind("Toggle Menu", Config.ToggleKey, function(k) Config.ToggleKey = k end)
+makeSection("MENU KEYBIND")
+makeKeybind("Toggle Menu", Config.ToggleKey, false, function(k) Config.ToggleKey = k end)
 
 makeSection("STATUS")
 makeStatus()
 
--- ========== TOGGLE KEY ==========
+-- ========== KEYBOARD TOGGLE ==========
 UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe or rebinding then return end
+    if gpe then return end
+    if rebinding or rebindingRage then return end
+
+    -- Toggle menu
     if input.KeyCode == Config.ToggleKey then
-        Main.Visible = not Main.Visible
+        local visible = not Main.Visible
+        Main.Visible = visible
+        Badge.Visible = not visible
+    end
+
+    -- Toggle rage via RageKey
+    if input.KeyCode == Config.RageKey then
+        Config.Enabled = not Config.Enabled
+        setRageToggle(Config.Enabled)
     end
 end)
